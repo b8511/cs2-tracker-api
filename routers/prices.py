@@ -22,5 +22,9 @@ async def get_price(request: Request, name: str = Query(..., description="Steam 
     if data is None or not data.get("success"):
         raise HTTPException(status_code=503, detail="Unable to fetch price from Steam")
 
+    # Steam returns success=true but no price fields when an item has no listings
+    if not data.get("lowest_price") and not data.get("median_price"):
+        raise HTTPException(status_code=404, detail="No listings found for this item")
+
     # Pass through all fields including cache metadata (cached, cached_at)
     return data

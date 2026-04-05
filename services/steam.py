@@ -126,15 +126,10 @@ async def fetch_price(item_name: str) -> dict | None:
                     }
                     _save_cache()
                     return {**data, "cached": False, "cached_at": fetched_at}
-                # success=True but no prices = Steam soft-rate-limiting this IP;
-                # treat like a 429 and retry with backoff
-                if attempt < len(RETRY_DELAYS):
-                    delay = RETRY_DELAYS[attempt]
-                    print(
-                        f"Steam returned no prices (soft-block), retry {attempt + 1}/{len(RETRY_DELAYS)} after {delay}s"
-                    )
-                    await asyncio.sleep(delay)
-                continue
+                # success=True but no prices = Steam soft-blocking this IP.
+                # No point retrying — fail fast so the frontend doesn't stall.
+                print(f"Steam soft-block (no prices) for: {item_name}")
+                return None
 
             # Only retry on rate-limit responses
             if resp.status_code not in (429, 503):

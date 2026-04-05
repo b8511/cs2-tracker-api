@@ -1,11 +1,15 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from services.steam import fetch_price
 
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
 
 
 @router.get("/prices")
-async def get_price(name: str = Query(..., description="Steam market_hash_name")):
+@limiter.limit("100/minute")
+async def get_price(request: Request, name: str = Query(..., description="Steam market_hash_name")):
     """
     Fetch live price data for a CS2 item from Steam Community Market.
     Returns { success, lowest_price, median_price, volume }.

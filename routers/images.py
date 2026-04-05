@@ -1,17 +1,21 @@
 import asyncio
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from services.image_proxy import fetch_from_csgodb, normalize_name
 from services import r2_storage
 
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
 
 # Cache-Control for served images: 24h browser, 7d CDN
 IMAGE_CACHE = "public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400"
 
 
 @router.get("/images")
-async def get_image(n: str = Query(..., description="CS2 item name")):
+@limiter.limit("200/minute")
+async def get_image(request: Request, n: str = Query(..., description="CS2 item name")):
     """
     Serve an item image.
     Strategy:

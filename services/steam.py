@@ -103,6 +103,7 @@ async def fetch_price(item_name: str) -> dict | None:
                 await asyncio.sleep(delay)
 
     return None
+
     def __init__(self, max_tokens: int = 20, refill_rate: float = 1.0):
         self.max_tokens = max_tokens
         self.tokens = float(max_tokens)

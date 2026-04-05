@@ -11,7 +11,7 @@ from routers import prices, images
 
 load_dotenv()
 
-limiter = Limiter(key_func=get_remote_address, default_limits=["100/minute"])
+limiter = Limiter(key_func=get_remote_address, default_limits=["300/minute"])
 
 app = FastAPI(title="CS2 Tracker API", version="1.0.0")
 app.state.limiter = limiter

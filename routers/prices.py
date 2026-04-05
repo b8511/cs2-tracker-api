@@ -8,7 +8,7 @@ limiter = Limiter(key_func=get_remote_address)
 
 
 @router.get("/prices")
-@limiter.limit("100/minute")
+@limiter.limit("300/minute")
 async def get_price(request: Request, name: str = Query(..., description="Steam market_hash_name")):
     """
     Fetch live price data for a CS2 item from Steam Community Market.

@@ -14,7 +14,7 @@ IMAGE_CACHE = "public, max-age=86400, s-maxage=604800, stale-while-revalidate=86
 
 
 @router.get("/images")
-@limiter.limit("200/minute")
+@limiter.limit("400/minute")
 async def get_image(request: Request, n: str = Query(..., description="CS2 item name")):
     """
     Serve an item image.

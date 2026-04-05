@@ -8,9 +8,10 @@ In-memory cache: item_name → icon_url, populated on first fetch.
 """
 
 import re
+import json
 import httpx
+from urllib.parse import quote
 
-STEAM_LISTING_RENDER = "https://steamcommunity.com/market/listings/730/{name}/render"
 STEAM_MARKET_SEARCH = "https://steamcommunity.com/market/search/render/"
 STEAM_CDN_BASE = "https://community.cloudflare.steamstatic.com/economy/image"
 
@@ -35,7 +36,8 @@ async def _resolve_via_listing(item_name: str, client: httpx.AsyncClient) -> str
     Use the market listing render endpoint for the exact item name.
     This is authoritative — it only returns data for that specific item.
     """
-    url = STEAM_LISTING_RENDER.format(name=item_name)
+    encoded_name = quote(item_name, safe="")
+    url = f"https://steamcommunity.com/market/listings/730/{encoded_name}/render"
     try:
         resp = await client.get(
             url,
@@ -52,7 +54,7 @@ async def _resolve_via_listing(item_name: str, client: httpx.AsyncClient) -> str
                     icon_url = item.get("icon_url")
                     if icon_url:
                         return icon_url
-    except (httpx.RequestError, KeyError, ValueError):
+    except (httpx.RequestError, KeyError, ValueError, json.JSONDecodeError, Exception):
         pass
     return None
 
@@ -76,7 +78,7 @@ async def _resolve_via_search(item_name: str, client: httpx.AsyncClient) -> str 
                 icon_url = r.get("asset_description", {}).get("icon_url")
                 if icon_url:
                     return icon_url
-    except (httpx.RequestError, KeyError, ValueError):
+    except (httpx.RequestError, KeyError, ValueError, json.JSONDecodeError, Exception):
         pass
     return None
 

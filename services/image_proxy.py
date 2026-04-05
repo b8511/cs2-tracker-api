@@ -1,15 +1,16 @@
 """
 Image proxy service.
-Resolves CS2 item images via the Steam Market search API, then proxies the
-image from Steam's CDN (community.cloudflare.steamstatic.com).
+Resolves CS2 item images via the Steam Market listing render endpoint (exact
+item lookup), falling back to the search API if needed. Then proxies the image
+from Steam's CDN (community.cloudflare.steamstatic.com).
 
-An in-memory cache stores item_name → icon_url so the search API is only
-called once per item name per server lifetime.
+In-memory cache: item_name → icon_url, populated on first fetch.
 """
 
 import re
 import httpx
 
+STEAM_LISTING_RENDER = "https://steamcommunity.com/market/listings/730/{name}/render"
 STEAM_MARKET_SEARCH = "https://steamcommunity.com/market/search/render/"
 STEAM_CDN_BASE = "https://community.cloudflare.steamstatic.com/economy/image"
 
@@ -29,51 +30,77 @@ def normalize_name(item_name: str) -> str:
     return name.strip("_")
 
 
-async def _resolve_icon_url(item_name: str, client: httpx.AsyncClient) -> str | None:
+async def _resolve_via_listing(item_name: str, client: httpx.AsyncClient) -> str | None:
     """
-    Query the Steam Market search API for `item_name` (CS2 / appid 730).
-    Returns the icon_url path (relative to STEAM_CDN_BASE) or None.
+    Use the market listing render endpoint for the exact item name.
+    This is authoritative — it only returns data for that specific item.
     """
-    cache_key = item_name.lower()
-    if cache_key in _icon_cache:
-        return _icon_cache[cache_key]
+    url = STEAM_LISTING_RENDER.format(name=item_name)
+    try:
+        resp = await client.get(
+            url,
+            params={"start": "0", "count": "1", "currency": "1", "language": "english"},
+            headers={"User-Agent": _USER_AGENT},
+            timeout=10.0,
+        )
+        if resp.status_code != 200:
+            return None
+        assets = resp.json().get("assets", {})
+        for contexts in assets.values():
+            for items in contexts.values():
+                for item in items.values():
+                    icon_url = item.get("icon_url")
+                    if icon_url:
+                        return icon_url
+    except (httpx.RequestError, KeyError, ValueError):
+        pass
+    return None
 
+
+async def _resolve_via_search(item_name: str, client: httpx.AsyncClient) -> str | None:
+    """
+    Fallback: search the Steam Market and look for an exact name match.
+    """
     try:
         resp = await client.get(
             STEAM_MARKET_SEARCH,
-            params={"query": item_name, "appid": "730", "norender": "1", "count": "5"},
+            params={"query": item_name, "appid": "730", "norender": "1", "count": "10"},
             headers={"User-Agent": _USER_AGENT, "Accept": "application/json"},
             timeout=10.0,
         )
         if resp.status_code != 200:
             return None
-
         results = resp.json().get("results", [])
-        if not results:
-            return None
-
-        # Prefer an exact name match; fall back to first result
-        icon_url: str | None = None
         for r in results:
-            if r.get("name", "").lower() == item_name.lower():
+            if r.get("hash_name", "").lower() == item_name.lower() or \
+               r.get("name", "").lower() == item_name.lower():
                 icon_url = r.get("asset_description", {}).get("icon_url")
-                break
-        if not icon_url:
-            icon_url = results[0].get("asset_description", {}).get("icon_url")
-
-        if icon_url:
-            _icon_cache[cache_key] = icon_url
-
-        return icon_url
+                if icon_url:
+                    return icon_url
     except (httpx.RequestError, KeyError, ValueError):
-        return None
+        pass
+    return None
+
+
+async def _resolve_icon_url(item_name: str, client: httpx.AsyncClient) -> str | None:
+    cache_key = item_name.lower()
+    if cache_key in _icon_cache:
+        return _icon_cache[cache_key]
+
+    icon_url = await _resolve_via_listing(item_name, client)
+    if not icon_url:
+        icon_url = await _resolve_via_search(item_name, client)
+
+    if icon_url:
+        _icon_cache[cache_key] = icon_url
+
+    return icon_url
 
 
 async def fetch_from_csgodb(item_name: str) -> tuple[bytes, str] | None:
     """
-    Fetch the image for `item_name` from the Steam Market / Steam CDN.
+    Fetch the image for `item_name` from Steam CDN.
     Returns (image_bytes, content_type) or None if unavailable.
-
     (Function name kept for backward compatibility with the router.)
     """
     try:

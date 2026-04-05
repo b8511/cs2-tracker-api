@@ -24,13 +24,17 @@ _price_cache: dict[str, dict] = {}
 
 
 def _load_cache() -> None:
-    """Restore cache from disk, dropping already-expired entries."""
+    """Restore cache from disk, dropping expired or priceless entries."""
     global _price_cache
     try:
         if CACHE_FILE.exists():
             raw: dict = json.loads(CACHE_FILE.read_text(encoding="utf-8"))
             now = time.time()
-            _price_cache = {k: v for k, v in raw.items() if v.get("expires_at", 0) > now}
+            _price_cache = {
+                k: v for k, v in raw.items()
+                if v.get("expires_at", 0) > now
+                and (v.get("data", {}).get("lowest_price") or v.get("data", {}).get("median_price"))
+            }
     except Exception:
         _price_cache = {}
 
@@ -94,7 +98,7 @@ async def fetch_price(item_name: str) -> dict | None:
         "market_hash_name": item_name,
     }
     headers = {
-        "User-Agent": "cs-skin-tracker/1.0",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "application/json",
     }
 
@@ -111,14 +115,23 @@ async def fetch_price(item_name: str) -> dict | None:
 
             if resp.status_code == 200:
                 data = resp.json()
-                fetched_at = time.time()
-                _price_cache[cache_key] = {
-                    "data": data,
-                    "expires_at": fetched_at + CACHE_TTL,
-                    "fetched_at": fetched_at,
-                }
-                _save_cache()
-                return {**data, "cached": False, "cached_at": fetched_at}
+                has_price = data.get("lowest_price") or data.get("median_price")
+                if has_price:
+                    fetched_at = time.time()
+                    _price_cache[cache_key] = {
+                        "data": data,
+                        "expires_at": fetched_at + CACHE_TTL,
+                        "fetched_at": fetched_at,
+                    }
+                    _save_cache()
+                    return {**data, "cached": False, "cached_at": fetched_at}
+                # success=True but no prices = Steam soft-rate-limiting this IP;
+                # treat like a 429 and retry with backoff
+                if attempt < len(RETRY_DELAYS):
+                    delay = RETRY_DELAYS[attempt]
+                    print(f"Steam returned no prices (soft-block), retry {attempt + 1}/{len(RETRY_DELAYS)} after {delay}s")
+                    await asyncio.sleep(delay)
+                continue
 
             # Only retry on rate-limit responses
             if resp.status_code not in (429, 503):

@@ -9,8 +9,11 @@ load_dotenv()
 
 app = FastAPI(title="CS2 Tracker API", version="1.0.0")
 
-allowed_origins_raw = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")
-allowed_origins = [o.strip() for o in allowed_origins_raw.split(",")]
+allowed_origins_raw = os.getenv("ALLOWED_ORIGINS", "*")
+if allowed_origins_raw.strip() == "*":
+    allowed_origins = ["*"]
+else:
+    allowed_origins = [o.strip() for o in allowed_origins_raw.split(",")]
 
 app.add_middleware(
     CORSMiddleware,

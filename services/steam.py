@@ -31,7 +31,8 @@ def _load_cache() -> None:
             raw: dict = json.loads(CACHE_FILE.read_text(encoding="utf-8"))
             now = time.time()
             _price_cache = {
-                k: v for k, v in raw.items()
+                k: v
+                for k, v in raw.items()
                 if v.get("expires_at", 0) > now
                 and (v.get("data", {}).get("lowest_price") or v.get("data", {}).get("median_price"))
             }
@@ -129,7 +130,9 @@ async def fetch_price(item_name: str) -> dict | None:
                 # treat like a 429 and retry with backoff
                 if attempt < len(RETRY_DELAYS):
                     delay = RETRY_DELAYS[attempt]
-                    print(f"Steam returned no prices (soft-block), retry {attempt + 1}/{len(RETRY_DELAYS)} after {delay}s")
+                    print(
+                        f"Steam returned no prices (soft-block), retry {attempt + 1}/{len(RETRY_DELAYS)} after {delay}s"
+                    )
                     await asyncio.sleep(delay)
                 continue
 

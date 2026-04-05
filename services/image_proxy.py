@@ -72,8 +72,7 @@ async def _resolve_via_search(item_name: str, client: httpx.AsyncClient) -> str 
             return None
         results = resp.json().get("results", [])
         for r in results:
-            if r.get("hash_name", "").lower() == item_name.lower() or \
-               r.get("name", "").lower() == item_name.lower():
+            if r.get("hash_name", "").lower() == item_name.lower() or r.get("name", "").lower() == item_name.lower():
                 icon_url = r.get("asset_description", {}).get("icon_url")
                 if icon_url:
                     return icon_url

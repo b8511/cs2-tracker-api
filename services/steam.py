@@ -15,6 +15,7 @@ import httpx
 STEAM_APP_ID = "730"
 STEAM_CURRENCY = "1"  # USD
 STEAM_URL = "https://steamcommunity.com/market/priceoverview/"
+STEAM_SEARCH_URL = "https://steamcommunity.com/market/search/render/"
 RETRY_DELAYS = [2, 32, 62]  # seconds
 CACHE_TTL = 4 * 60 * 60  # 4 hours in seconds
 CACHE_FILE = Path(__file__).parent.parent / "price_cache.json"
@@ -79,6 +80,28 @@ class TokenBucket:
 # Module-level singleton so all requests share one bucket
 _bucket = TokenBucket()
 
+_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+
+
+async def _resolve_canonical_name(item_name: str, client: httpx.AsyncClient) -> str | None:
+    """Search Steam Market to find the canonical hash_name (correct casing)."""
+    try:
+        resp = await client.get(
+            STEAM_SEARCH_URL,
+            params={"query": item_name, "appid": STEAM_APP_ID, "norender": "1", "count": "5"},
+            headers={"User-Agent": _UA, "Accept": "application/json"},
+            timeout=10.0,
+        )
+        if resp.status_code != 200:
+            return None
+        for r in resp.json().get("results", []):
+            hash_name = r.get("hash_name", "")
+            if hash_name.lower() == item_name.lower():
+                return hash_name
+    except Exception:
+        pass
+    return None
+
 
 async def fetch_price(item_name: str) -> dict | None:
     """
@@ -99,7 +122,7 @@ async def fetch_price(item_name: str) -> dict | None:
         "market_hash_name": item_name,
     }
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "User-Agent": _UA,
         "Accept": "application/json",
     }
 
@@ -127,8 +150,16 @@ async def fetch_price(item_name: str) -> dict | None:
                     _save_cache()
                     return {**data, "cached": False, "cached_at": fetched_at}
                 # success=True but no prices = Steam soft-blocking this IP.
-                # No point retrying — fail fast so the frontend doesn't stall.
+                # Before giving up, try to resolve the canonical name in case
+                # the casing was wrong — then do one immediate retry.
                 print(f"Steam soft-block (no prices) for: {item_name}")
+                canonical = await _resolve_canonical_name(item_name, client)
+                if canonical and canonical != item_name:
+                    print(f"Retrying with canonical name: {canonical}")
+                    result = await fetch_price(canonical)
+                    if result:
+                        result["resolved_name"] = canonical
+                    return result
                 return None
 
             # Only retry on rate-limit responses

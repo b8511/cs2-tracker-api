@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: cs2-tracker-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: ALLOWED_ORIGINS
+        value: https://new-cs-dashboard.vercel.app,http://localhost:5173
+      # Cloudflare R2 (optional — only for image fallback). Leave unset to skip.
+      # - key: R2_ENDPOINT
+      #   sync: false
+      # - key: R2_BUCKET
+      #   sync: false
+      # - key: R2_ACCESS_KEY
+      #   sync: false
+      # - key: R2_SECRET_KEY
+      #   sync: false
